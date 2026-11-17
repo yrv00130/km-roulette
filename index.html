@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="マイルーレット" />
+  <link rel="manifest" href="manifest.json" />
+  <title>マイルーレット</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --danger: #f43f5e;
+      --success: #10b981;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      margin: 0;
+      padding: 16px 16px 40px;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 { font-size: 1.2rem; margin: 8px 0 12px; }
+    .wheel-container {
+      position: relative;
+      width: min(86vw, 340px);
+      height: min(86vw, 340px);
+      margin: 8px auto 16px;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .pointer {
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 14px solid transparent;
+      border-right: 14px solid transparent;
+      border-top: 26px solid #facc15;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+      z-index: 10;
+    }
+    .spin-btn {
+      width: min(86vw, 340px);
+      padding: 14px;
+      font-size: 1.15rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #38bdf8, #3b82f6);
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(59,130,246,0.4);
+      margin-bottom: 16px;
+    }
+    .spin-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .panel {
+      width: 100%;
+      max-width: 440px;
+      background: var(--card);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    .row:last-child { margin-bottom: 0; }
+    label { font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
+    input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+    .item-row {
+      display: grid;
+      grid-template-columns: 32px 1fr 56px 52px 32px;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    input[type="color"] {
+      width: 32px; height: 32px; border: none; background: none; padding: 0;
+    }
+    input[type="text"], input[type="number"], textarea, select {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 8px;
+      font-size: 0.9rem;
+      width: 100%;
+    }
+    .prob-badge {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: right;
+    }
+    .icon-btn {
+      background: #334155;
+      color: var(--text);
+      border: none;
+      border-radius: 8px;
+      padding: 7px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .icon-btn.danger { background: rgba(244,63,94,0.2); color: var(--danger); }
+    .sub-btn {
+      background: #334155;
+      color: var(--text);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    /* 当選モーダル */
+    .modal {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .modal.show { display: flex; }
+    .modal-box {
+      background: var(--card);
+      border: 2px solid var(--accent);
+      border-radius: 18px;
+      padding: 24px;
+      text-align: center;
+      width: 100%;
+      max-width: 320px;
+    }
+    .winner-name {
+      font-size: 1.8rem;
+      font-weight: bold;
+      margin: 14px 0 20px;
+      color: #facc15;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎯 マイルーレット</h1>
+
+  <div class="wheel-container">
+    <div class="pointer"></div>
+    <canvas id="wheel" width="600" height="600"></canvas>
+  </div>
+
+  <button id="spinBtn" class="spin-btn">スタート！</button>
+
+  <!-- オプション設定 -->
+  <div class="panel">
+    <div class="row">
+      <label><input type="checkbox" id="autoExclude" /> 当選した項目を自動除外</label>
+      <label><input type="checkbox" id="soundOn" checked /> 効果音</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="showProb" checked /> ルーレット上に確率(%)表示</label>
+      <button class="sub-btn" id="restoreBtn">除外を戻す</button>
+    </div>
+  </div>
+
+  <!-- 項目リスト -->
+  <div class="panel">
+    <div class="row">
+      <strong>項目リスト（最大500件）</strong>
+      <div style="display:flex; gap:6px;">
+        <button class="sub-btn" id="addItemBtn">＋追加</button>
+        <button class="sub-btn" id="bulkToggleBtn">一括入力</button>
+      </div>
+    </div>
+
+    <div id="bulkArea" style="display:none; margin-bottom:12px;">
+      <textarea id="bulkText" rows="5" placeholder="改行区切りで項目を入力&#10;例：&#10;ラーメン&#10;カレー&#10;寿司"></textarea>
+      <div class="row" style="margin-top:6px;">
+        <button class="sub-btn" id="bulkReplaceBtn">置き換え</button>
+        <button class="sub-btn" id="bulkAppendBtn">末尾に追加</button>
+      </div>
+    </div>
+
+    <div id="itemList"></div>
+  </div>
+
+  <!-- 当選結果モーダル -->
+  <div class="modal" id="resultModal">
+    <div class="modal-box">
+      <div style="color:var(--muted); font-size:0.9rem;">当選結果</div>
+      <div class="winner-name" id="winnerText"></div>
+      <button class="spin-btn" style="width:100%; margin:0;" id="closeModalBtn">OK</button>
+    </div>
+  </div>
+
+<script>
+const PALETTE = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
+const STORAGE_KEY = 'my_roulette_data_v1';
+
+let state = {
+  items: [
+    { name: 'ラーメン', weight: 1, color: '#ef4444', active: true },
+    { name: '寿司', weight: 1, color: '#3b82f6', active: true },
+    { name: '焼肉', weight: 1, color: '#10b981', active: true },
+    { name: 'カレー', weight: 1, color: '#f59e0b', active: true }
+  ],
+  autoExclude: false,
+  soundOn: true,
+  showProb: true
+};
+
+// 保存データ読み込み
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  if (saved && Array.isArray(saved.items)) state = { ...state, ...saved };
+} catch (e) {}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// 効果音（Web Audio API）
+let audioCtx = null;
+function playTick() {
+  if (!state.soundOn) return;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(750, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.04);
+}
+
+const canvas = document.getElementById('wheel');
+const ctx = canvas.getContext('2d');
+let currentAngle = 0; // ラジアン
+let isSpinning = false;
+
+function getActiveItems() {
+  return state.items.filter(i => i.active && i.weight > 0);
+}
+
+function drawWheel() {
+  const active = getActiveItems();
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const radius = cx - 10;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (active.length === 0) {
+    ctx.fillStyle = '#334155';
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('項目がありません', cx, cy);
+    return;
+  }
+
+  const totalWeight = active.reduce((sum, item) => sum + Number(item.weight), 0);
+  let startAngle = currentAngle - Math.PI / 2; // 上（12時）を基準
+
+  active.forEach(item => {
+    const slice = (Number(item.weight) / totalWeight) * Math.PI * 2;
+    const endAngle = startAngle + slice;
+
+    // 扇形
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, radius, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fillStyle = item.color;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+
+    // テキスト描画
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(startAngle + slice / 2);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.7)';
+    ctx.shadowBlur = 4;
+
+    const pct = ((Number(item.weight) / totalWeight) * 100).toFixed(1);
+    const label = state.showProb && slice > 0.14 ? `${item.name} (${pct}%)` : item.name;
+    const fontSize = Math.max(14, Math.min(26, Math.floor(slice * 90)));
+    ctx.font = `bold ${fontSize}px sans-serif`;
+
+    if (slice > 0.05) {
+      ctx.fillText(label.slice(0, 16), radius - 22, fontSize / 3);
+    }
+    ctx.restore();
+
+    startAngle = endAngle;
+  });
+
+  // 中央の飾り円
+  ctx.beginPath();
+  ctx.arc(cx, cy, 26, 0, Math.PI * 2);
+  ctx.fillStyle = '#0f172a';
+  ctx.fill();
+}
+
+function getWinnerAtTop() {
+  const active = getActiveItems();
+  if (active.length === 0) return null;
+  const totalWeight = active.reduce((s, i) => s + Number(i.weight), 0);
+  // 12時方向（0ラジアン基準）に対応するホイール上の角度
+  const norm = (( -currentAngle ) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+  let acc = 0;
+  for (const item of active) {
+    const slice = (Number(item.weight) / totalWeight) * Math.PI * 2;
+    if (norm >= acc && norm < acc + slice) return item;
+    acc += slice;
+  }
+  return active[active.length - 1];
+}
+
+// 回転アニメーション
+document.getElementById('spinBtn').addEventListener('click', () => {
+  const active = getActiveItems();
+  if (isSpinning || active.length === 0) return;
+
+  isSpinning = true;
+  document.getElementById('spinBtn').disabled = true;
+
+  const duration = 4200; // 4.2秒
+  const extraSpins = (6 + Math.random() * 4) * Math.PI * 2;
+  const startAngle = currentAngle;
+  const targetAngle = startAngle + extraSpins;
+  const startTime = performance.now();
+  let lastWinnerName = null;
+
+  function animate(now) {
+    const elapsed = now - startTime;
+    const t = Math.min(elapsed / duration, 1);
+    // イージング（滑らかに減速）
+    const ease = 1 - Math.pow(1 - t, 4);
+    currentAngle = startAngle + (targetAngle - startAngle) * ease;
+    drawWheel();
+
+    const currentItem = getWinnerAtTop();
+    if (currentItem && currentItem.name !== lastWinnerName) {
+      playTick();
+      lastWinnerName = currentItem.name;
+    }
+
+    if (t < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      isSpinning = false;
+      document.getElementById('spinBtn').disabled = false;
+      const winner = getWinnerAtTop();
+      if (winner) {
+        document.getElementById('winnerText').textContent = winner.name;
+        document.getElementById('resultModal').classList.add('show');
+        if (state.autoExclude) {
+          winner.active = false;
+          saveState();
+          renderList();
+          drawWheel();
+        }
+      }
+    }
+  }
+  requestAnimationFrame(animate);
+});
+
+document.getElementById('closeModalBtn').addEventListener('click', () => {
+  document.getElementById('resultModal').classList.remove('show');
+});
+
+// UIリスト描画
+function renderList() {
+  const listEl = document.getElementById('itemList');
+  listEl.innerHTML = '';
+  const activeTotal = getActiveItems().reduce((s, i) => s + Number(i.weight), 0);
+
+  state.items.forEach((item, idx) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    if (!item.active) row.style.opacity = '0.4';
+
+    const pct = (item.active && activeTotal > 0)
+      ? ((Number(item.weight) / activeTotal) * 100).toFixed(0) + '%'
+      : '除外';
+
+    row.innerHTML = `
+      <input type="color" value="${item.color}" data-idx="${idx}" class="c-pick" />
+      <input type="text" value="${item.name}" data-idx="${idx}" class="n-inp" />
+      <input type="number" min="1" max="999" value="${item.weight}" data-idx="${idx}" class="w-inp" title="比率" />
+      <span class="prob-badge">${pct}</span>
+      <button class="icon-btn danger del-btn" data-idx="${idx}">×</button>
+    `;
+    listEl.appendChild(row);
+  });
+
+  listEl.querySelectorAll('.c-pick').forEach(el => el.addEventListener('input', e => {
+    state.items[e.target.dataset.idx].color = e.target.value;
+    saveState(); drawWheel();
+  }));
+  listEl.querySelectorAll('.n-inp').forEach(el => el.addEventListener('input', e => {
+    state.items[e.target.dataset.idx].name = e.target.value;
+    saveState(); drawWheel();
+  }));
+  listEl.querySelectorAll('.w-inp').forEach(el => el.addEventListener('input', e => {
+    state.items[e.target.dataset.idx].weight = Math.max(1, Number(e.target.value) || 1);
+    saveState(); renderList(); drawWheel();
+  }));
+  listEl.querySelectorAll('.del-btn').forEach(el => el.addEventListener('click', e => {
+    state.items.splice(e.target.dataset.idx, 1);
+    saveState(); renderList(); drawWheel();
+  }));
+}
+
+// コントロール類
+document.getElementById('addItemBtn').addEventListener('click', () => {
+  if (state.items.length >= 500) return;
+  const color = PALETTE[state.items.length % PALETTE.length];
+  state.items.push({ name: `項目${state.items.length + 1}`, weight: 1, color, active: true });
+  saveState(); renderList(); drawWheel();
+});
+
+document.getElementById('bulkToggleBtn').addEventListener('click', () => {
+  const area = document.getElementById('bulkArea');
+  area.style.display = area.style.display === 'none' ? 'block' : 'none';
+});
+
+function applyBulk(replace) {
+  const lines = document.getElementById('bulkText').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  if (lines.length === 0) return;
+  const newItems = lines.map((name, i) => ({
+    name,
+    weight: 1,
+    color: PALETTE[(replace ? i : state.items.length + i) % PALETTE.length],
+    active: true
+  }));
+  state.items = replace ? newItems.slice(0, 500) : [...state.items, ...newItems].slice(0, 500);
+  document.getElementById('bulkText').value = '';
+  document.getElementById('bulkArea').style.display = 'none';
+  saveState(); renderList(); drawWheel();
+}
+
+document.getElementById('bulkReplaceBtn').addEventListener('click', () => applyBulk(true));
+document.getElementById('bulkAppendBtn').addEventListener('click', () => applyBulk(false));
+
+document.getElementById('restoreBtn').addEventListener('click', () => {
+  state.items.forEach(i => i.active = true);
+  saveState(); renderList(); drawWheel();
+});
+
+const autoExEl = document.getElementById('autoExclude');
+const soundEl = document.getElementById('soundOn');
+const probEl = document.getElementById('showProb');
+autoExEl.checked = state.autoExclude;
+soundEl.checked = state.soundOn;
+probEl.checked = state.showProb;
+
+autoExEl.addEventListener('change', e => { state.autoExclude = e.target.checked; saveState(); });
+soundEl.addEventListener('change', e => { state.soundOn = e.target.checked; saveState(); });
+probEl.addEventListener('change', e => { state.showProb = e.target.checked; saveState(); drawWheel(); });
+
+// Service Worker 登録（PWAオフライン対応）
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+renderList();
+drawWheel();
+</script>
+</body>
+</html>
